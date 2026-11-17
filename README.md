@@ -38,7 +38,7 @@ To build it into another xcaddy-based Caddy, add the module the same way:
 
 ```sh
 xcaddy build --with github.com/corazawaf/coraza-caddy/v2 \
-             --with github.com/mobytefon/coraza-mlcheck@v0.2.0
+             --with github.com/mobytefon/coraza-mlcheck@v0.2.1
 ```
 
 Generated Go stubs are committed: no protoc is required. Built and tested

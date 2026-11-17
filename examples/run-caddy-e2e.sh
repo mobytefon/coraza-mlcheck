@@ -13,9 +13,12 @@
 #                                  records "Argus v4 unavailable"
 # Then prints the audit log tail. Exits non-zero on the first failed check.
 set -euo pipefail
+# Git Bash would rewrite container paths such as /etc/caddy/config.json into
+# Windows paths; bind-mount sources are converted explicitly below.
+export MSYS_NO_PATHCONV=1
 
 caddy_image="${1:-ingressi-caddy:test}"
-sidecar_image="${2:-ghcr.io/mobytefon/argus-sidecar:v0.2.0}"
+sidecar_image="${2:-ghcr.io/mobytefon/argus-sidecar:v0.2.1}"
 model_dir="${ARGUS_MODEL_DIR_HOST:?Set ARGUS_MODEL_DIR_HOST to the prepared v4 bundle}"
 url="http://127.0.0.1:18080"
 sock_volume="argus-e2e-run"
