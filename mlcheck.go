@@ -202,20 +202,23 @@ func (a *mlcheckFn) Evaluate(_ plugintypes.RuleMetadata, tx plugintypes.Transact
 	}
 
 	st := stateFor(a.socketPath)
+	// The local concurrency slot comes first: a full limiter is Caddy shedding
+	// its own excess load, not a sidecar failure, so it must not hold (and
+	// fail) a breaker permit. Otherwise a burst above ARGUS_MAX_INFLIGHT opens
+	// the circuit and switches ML off for every request.
+	if !st.limiter.acquire(deadline, cfg.queueWait) {
+		a.fail(txVars, log, tx.ID(), start, reasonOverload, nil)
+		return
+	}
+	defer st.limiter.release()
+
 	permit := st.breaker.acquire(time.Now())
 	if permit == nil {
 		a.fail(txVars, log, tx.ID(), start, reasonCircuitOpen, nil)
 		return
 	}
-
 	// A permit resolves exactly once, including on a recovered panic.
 	defer func() { permit.failure(time.Now(), log) }()
-	if !st.limiter.acquire(deadline, cfg.queueWait) {
-		permit.failure(time.Now(), log)
-		a.fail(txVars, log, tx.ID(), start, reasonOverload, nil)
-		return
-	}
-	defer st.limiter.release()
 
 	client, err := getClient(a.socketPath)
 	if err != nil {

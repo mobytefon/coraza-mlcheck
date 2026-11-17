@@ -765,3 +765,36 @@ func TestDefaultMaxInflightMatchesSidecar(t *testing.T) {
 		t.Fatalf("default max in-flight = %d, want 16 (sidecar ARGUS_MAX_CONCURRENT_RPCS default)", got)
 	}
 }
+
+// TestLocalOverloadDoesNotOpenBreaker: requests shed by Caddy's own limiter
+// never reached the sidecar and must not count towards the circuit breaker.
+func TestLocalOverloadDoesNotOpenBreaker(t *testing.T) {
+	mock := &mockSentinel{score: 0.01, clean: true}
+	sock := startMock(t, mock)
+	resetRuntimeForTest(t, sock)
+	t.Setenv("ARGUS_MAX_INFLIGHT", "1")
+	t.Setenv("ARGUS_QUEUE_WAIT_MS", "0")
+	t.Setenv("ARGUS_CIRCUIT_FAILS", "2")
+	resetConfigForTests()
+	waf := newWAF(t, baseDirectives+mlcheckPass+"\n"+detectRule)
+
+	st := stateFor(sock)
+	if !st.limiter.acquire(time.Now().Add(time.Second), 0) {
+		t.Fatal("could not take the only limiter slot")
+	}
+	for i := 0; i < 5; i++ {
+		r := runRequest(t, waf, testRequest{method: "GET", uri: "/"})
+		if r.tx[txError] != "overload" {
+			t.Fatalf("request %d with a full limiter: error = %q, want overload", i, r.tx[txError])
+		}
+	}
+	st.limiter.release()
+
+	r := runRequest(t, waf, testRequest{method: "GET", uri: "/"})
+	if r.tx[txStatus] != statusOK || r.tx[txIsClean] != "1" {
+		t.Fatalf("after local overload the breaker must still be closed, got %+v", r)
+	}
+	if got := mock.count(); got != 1 {
+		t.Fatalf("sidecar saw %d RPCs, want 1", got)
+	}
+}
